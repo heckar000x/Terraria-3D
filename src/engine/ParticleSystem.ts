@@ -102,7 +102,8 @@ export class ParticleSystem {
       const p = this.particles[i];
       p.life -= dt;
       if (p.life <= 0) {
-        this.particles.splice(i, 1);
+        this.particles[i] = this.particles[this.particles.length - 1];
+        this.particles.pop();
         continue;
       }
       p.vy -= p.gravity * dt;
@@ -113,19 +114,21 @@ export class ParticleSystem {
 
     const count = Math.min(this.maxParticles, this.particles.length);
     this.mesh.count = count;
-    for (let i = 0; i < count; i++) {
-      const p = this.particles[i];
-      const s = p.size * (p.life / p.maxLife);
-      this.dummy.position.set(p.x, p.y, p.z);
-      this.dummy.scale.set(s, s, s);
-      this.dummy.rotation.set(p.life * 6, p.life * 4, 0);
-      this.dummy.updateMatrix();
-      this.mesh.setMatrixAt(i, this.dummy.matrix);
-      this.colorObj.setRGB(p.r, p.g, p.b);
-      this.mesh.setColorAt(i, this.colorObj);
+    if (count > 0) {
+      for (let i = 0; i < count; i++) {
+        const p = this.particles[i];
+        const s = p.size * (p.life / p.maxLife);
+        this.dummy.position.set(p.x, p.y, p.z);
+        this.dummy.scale.set(s, s, s);
+        this.dummy.rotation.set(p.life * 6, p.life * 4, 0);
+        this.dummy.updateMatrix();
+        this.mesh.setMatrixAt(i, this.dummy.matrix);
+        this.colorObj.setRGB(p.r, p.g, p.b);
+        this.mesh.setColorAt(i, this.colorObj);
+      }
+      this.mesh.instanceMatrix.needsUpdate = true;
+      if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
     }
-    this.mesh.instanceMatrix.needsUpdate = true;
-    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
 
     for (let i = this.floatingNumbers.length - 1; i >= 0; i--) {
       const f = this.floatingNumbers[i];

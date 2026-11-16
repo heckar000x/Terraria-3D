@@ -16,13 +16,18 @@ const STORE_CHARACTERS = 'characters';
 const STORE_WORLDS = 'worlds';
 const SETTINGS_KEY = 'terraria3d_settings_v1';
 
+const isLikelyMobileDevice = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  return 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth <= 920;
+};
+
 export const DEFAULT_SETTINGS: GameSettings = {
-  graphicsPreset: 'medium',
-  renderDistance: 5,
+  graphicsPreset: isLikelyMobileDevice() ? 'medium' : 'high',
+  renderDistance: isLikelyMobileDevice() ? 4 : 5,
   shadows: true,
   ambientOcclusion: true,
-  particleDensity: 0.75,
-  fov: 70,
+  particleDensity: isLikelyMobileDevice() ? 0.85 : 1.0,
+  fov: 72,
   cameraSensitivity: 1.0,
   invertY: false,
   masterVolume: 0.7,
@@ -31,6 +36,8 @@ export const DEFAULT_SETTINGS: GameSettings = {
   touchControlsMode: 'auto',
   autoJump: true,
   showFps: true,
+  targetFps: 120,
+  resolutionScale: 1.0,
 };
 
 export function createDefaultCharacter(
@@ -38,21 +45,11 @@ export function createDefaultCharacter(
   difficulty: CharacterDifficulty,
   appearance: CharacterAppearance
 ): CharacterSave {
+  // Players always begin empty-handed: punch trees & slimes to forge your first gear!
   const inv: (ItemStack | null)[] = Array(40).fill(null);
-  inv[0] = { itemId: 'copper_shortsword', count: 1, modifier: 'none' };
-  inv[1] = { itemId: 'copper_pickaxe', count: 1, modifier: 'none' };
-  inv[2] = { itemId: 'copper_axe', count: 1, modifier: 'none' };
-  inv[3] = { itemId: 'torch', count: 15 };
-  inv[4] = { itemId: 'lesser_healing_potion', count: 3 };
-  if (difficulty === 'journey') {
-    inv[5] = { itemId: 'iron_pickaxe', count: 1 };
-    inv[6] = { itemId: 'iron_broadsword', count: 1 };
-    inv[7] = { itemId: 'finch_staff', count: 1 };
-    inv[8] = { itemId: 'grappling_hook', count: 1 };
-    inv[9] = { itemId: 'magic_mirror', count: 1 };
-  }
 
   return {
+    schemaVersion: 2,
     id: `char_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     name: name.trim() || 'Terrarian',
     difficulty,
@@ -155,7 +152,11 @@ export class SaveManager {
       const raw = localStorage.getItem(SETTINGS_KEY);
       if (!raw) return { ...DEFAULT_SETTINGS };
       const parsed = JSON.parse(raw);
-      return { ...DEFAULT_SETTINGS, ...parsed };
+      const merged: GameSettings = { ...DEFAULT_SETTINGS, ...parsed };
+      if (parsed.targetFps === undefined && isLikelyMobileDevice() && parsed.renderDistance === 5 && parsed.graphicsPreset === 'medium') {
+        merged.renderDistance = 4;
+      }
+      return merged;
     } catch {
       return { ...DEFAULT_SETTINGS };
     }
@@ -172,6 +173,7 @@ export class SaveManager {
 
   public async saveCharacter(char: CharacterSave): Promise<void> {
     char.lastPlayedAt = Date.now();
+    (char as CharacterSave & { schemaVersion?: number }).schemaVersion = 2;
     const db = await this.getDB();
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_CHARACTERS, 'readwrite');
@@ -278,10 +280,21 @@ export class SaveManager {
       pantsColor: '#3949ab',
       shoeColor: '#4e342e',
     });
-    return {
+    const inv: (ItemStack | null)[] = Array.isArray(raw.inventory) ? raw.inventory.slice(0, 40) : base.inventory;
+    // Upgrade untouched v1 starter characters (< 2 min playtime with only old starter kit) to true empty start
+    const oldStarterIds = new Set([
+      'copper_shortsword', 'copper_pickaxe', 'copper_axe', 'torch', 'lesser_healing_potion',
+      'iron_pickaxe', 'iron_broadsword', 'finch_staff', 'grappling_hook', 'magic_mirror',
+    ]);
+    const isUntouchedV1Starter =
+      raw.schemaVersion !== 2 &&
+      (raw.playTimeSeconds ?? 0) < 120 &&
+      inv.every((s) => !s || oldStarterIds.has(s.itemId));
+
+    const recovered: CharacterSave & { schemaVersion?: number } = {
       ...base,
       ...raw,
-      inventory: Array.isArray(raw.inventory) ? raw.inventory.slice(0, 40) : base.inventory,
+      inventory: isUntouchedV1Starter ? Array(40).fill(null) : inv,
       coins: Array.isArray(raw.coins) ? raw.coins.slice(0, 4) : base.coins,
       ammo: Array.isArray(raw.ammo) ? raw.ammo.slice(0, 4) : base.ammo,
       armor: Array.isArray(raw.armor) ? raw.armor.slice(0, 3) : base.armor,
@@ -291,7 +304,9 @@ export class SaveManager {
       piggyBank: Array.isArray(raw.piggyBank) ? raw.piggyBank.slice(0, 20) : base.piggyBank,
       researchedItems: raw.researchedItems ?? {},
       unlockedAchievements: Array.isArray(raw.unlockedAchievements) ? raw.unlockedAchievements : [],
+      schemaVersion: 2,
     };
+    return recovered;
   }
 
   private recoverWorld(raw: any): WorldSave | null {

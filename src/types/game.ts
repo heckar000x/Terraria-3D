@@ -683,6 +683,7 @@ export interface CharacterAppearance {
 }
 
 export interface CharacterSave {
+  schemaVersion?: number;
   id: string;
   name: string;
   difficulty: CharacterDifficulty;
@@ -790,6 +791,8 @@ export interface GameSettings {
   touchControlsMode: 'auto' | 'on' | 'off';
   autoJump: boolean;
   showFps: boolean;
+  targetFps?: 0 | 30 | 60 | 120;
+  resolutionScale?: number; // 0.7 | 0.85 | 1.0
 }
 
 export interface JourneyPowersState {

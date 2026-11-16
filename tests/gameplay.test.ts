@@ -150,4 +150,50 @@ describe('Player 3D Physics, Inventory, Crafting, Housing & Fishing', () => {
     expect(FishingFarmingSystem.tryPlantAcornOrHerb(world, 'acorn', 12, 151, 12)).toBe(true);
     expect(world.getBlock(12, 151, 12)).toBe(BlockId.Wood);
   });
+
+  it('starts new characters with an empty inventory and supports bare-hand wood -> stone -> copper progression', () => {
+    const save = createNewWorldSave('StarterProg', 44444, 'small', 'classic', 'corruption');
+    const world = new WorldManager(save.meta, save.chunkDeltas, save.chests, save.exploredChunks);
+    world.updateStreaming(0, 0, 1);
+
+    const char = createDefaultCharacter('BareHanded', 'classic', defaultAppearance);
+    expect(char.inventory.every((slot) => slot === null)).toBe(true);
+    expect(char.schemaVersion).toBe(2);
+
+    // Place a 3-block tree trunk and chop bare-handed (0 axe power breaks 1 block, axe cascades!)
+    world.setBlock(2, 151, 2, BlockId.Wood);
+    world.setBlock(2, 152, 2, BlockId.Wood);
+    world.setBlock(2, 153, 2, BlockId.Wood);
+
+    const bareHit = world.mineBlock(2, 151, 2, 0, 0, 0);
+    expect(bareHit.broken).toBe(true);
+    expect(bareHit.drops.some((d) => d.itemId === 'wood')).toBe(true);
+    expect(world.getBlock(2, 152, 2)).toBe(BlockId.Wood);
+
+    // Gather wood and progress through Work Bench -> Wooden Pickaxe -> Stone Tools -> Copper Shortsword
+    InventorySystem.addItem(char, 'wood', 40);
+    const benchRec = RECIPES.find((r) => r.resultId === 'work_bench')!;
+    expect(InventorySystem.craftRecipe(char, benchRec, new Set(['hand']), false)).toBe(true);
+
+    const woodPickRec = RECIPES.find((r) => r.resultId === 'wooden_pickaxe')!;
+    const woodAxeRec = RECIPES.find((r) => r.resultId === 'wooden_axe')!;
+    expect(InventorySystem.craftRecipe(char, woodPickRec, new Set(['hand', 'workbench']), false)).toBe(true);
+    expect(InventorySystem.craftRecipe(char, woodAxeRec, new Set(['hand', 'workbench']), false)).toBe(true);
+
+    const axeHit = world.mineBlock(2, 152, 2, 0, 25, 0);
+    expect(axeHit.broken).toBe(true);
+    expect(world.getBlock(2, 153, 2)).toBe(BlockId.Air); // Axe cascade!
+
+    InventorySystem.addItem(char, 'stone_block', 30);
+    const stonePickRec = RECIPES.find((r) => r.resultId === 'stone_pickaxe')!;
+    const stoneSwordRec = RECIPES.find((r) => r.resultId === 'stone_sword')!;
+    expect(InventorySystem.craftRecipe(char, stonePickRec, new Set(['hand', 'workbench']), false)).toBe(true);
+    expect(InventorySystem.craftRecipe(char, stoneSwordRec, new Set(['hand', 'workbench']), false)).toBe(true);
+
+    InventorySystem.addItem(char, 'copper_bar', 8);
+    const copperShortRec = RECIPES.find((r) => r.resultId === 'copper_shortsword')!;
+    expect(copperShortRec).toBeDefined();
+    expect(InventorySystem.craftRecipe(char, copperShortRec, new Set(['hand', 'iron_anvil']), false)).toBe(true);
+    expect(InventorySystem.countItem(char, 'copper_shortsword')).toBe(1);
+  });
 });

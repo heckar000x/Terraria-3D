@@ -14,6 +14,7 @@ export class InventoryPanel {
   private trashSlot: ItemStack | null = null;
   private activeSubTab: 'craft' | 'housing' = 'craft';
   private showAllRecipes = false;
+  private tapQuickUse = false;
   private recipeSearch = '';
   private lastHouseCheck: HouseValidationResult | null = null;
 
@@ -151,15 +152,20 @@ export class InventoryPanel {
       ? `<span style="color:#ffd740;font-size:13px;">Holding: <b>${getItemDef(this.heldCursor.itemId)?.name ?? this.heldCursor.itemId} x${this.heldCursor.count}</b> (Click a slot to place)</span>`
       : `<span style="color:#9eb0df;font-size:12px;">Click to move · Right-click to equip/consume · Coins: <b style="color:#ffd740">${formatCoins(InventorySystem.getTotalCopper(char))}</b></span>`;
     hdr.innerHTML = `
-      <div style="display:flex;align-items:center;gap:12px;">
-        <h3 style="margin:0;color:#ffd740;">Inventory & Crafting</h3>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <h3 style="margin:0;color:#ffd740;font-size:16px;">Inventory & Crafting</h3>
         ${heldTxt}
       </div>
-      <div style="display:flex;gap:8px;">
-        <button class="t-btn" id="inv-sort">Sort Bag</button>
-        <button class="t-btn t-btn-danger" id="inv-close">Close [E]</button>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="t-btn ${this.tapQuickUse ? 't-btn-gold' : ''}" id="inv-tap-mode" style="padding:5px 10px;font-size:12px;">Tap: ${this.tapQuickUse ? 'Equip/Use' : 'Move'}</button>
+        <button class="t-btn" id="inv-sort" style="padding:5px 10px;font-size:12px;">Sort Bag</button>
+        <button class="t-btn t-btn-danger" id="inv-close" style="padding:5px 10px;font-size:12px;">Close [E]</button>
       </div>
     `;
+    hdr.querySelector('#inv-tap-mode')?.addEventListener('click', () => {
+      this.tapQuickUse = !this.tapQuickUse;
+      this.render();
+    });
     hdr.querySelector('#inv-sort')?.addEventListener('click', () => {
       InventorySystem.sortInventory(char);
       this.engine.audio.playSfx('ui_click');
@@ -170,20 +176,24 @@ export class InventoryPanel {
 
     // Main Grid Body
     const body = document.createElement('div');
-    body.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;overflow-y:auto;max-height:76vh;';
+    body.className = 't-scroll';
+    body.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(285px,1fr));gap:12px;overflow-y:auto;max-height:calc(90dvh - 58px);';
 
     // LEFT COLUMN: 40-slot Bag + Coins + Ammo + Chest (if open)
     const leftCol = document.createElement('div');
     leftCol.style.cssText = 'display:flex;flex-direction:column;gap:10px;';
 
     const bagGrid = document.createElement('div');
-    bagGrid.style.cssText = 'display:grid;grid-template-columns:repeat(10, 1fr);gap:4px;';
+    bagGrid.style.cssText = 'display:grid;grid-template-columns:repeat(10, 1fr);gap:3px;';
     for (let i = 0; i < 40; i++) {
       const slot = createItemSlotEl(char.inventory[i], {
         indexLabel: i < 10 ? (i === 9 ? '0' : String(i + 1)) : undefined,
         active: i === this.engine.selectedHotbar,
-        extraTooltip: 'Right-click to equip/consume',
-        onClick: () => this.swapWithCursor(() => char.inventory[i], (s) => (char.inventory[i] = s)),
+        extraTooltip: 'Right-click (or Tap Equip/Use) to equip/consume',
+        onClick: () => {
+          if (this.tapQuickUse && !this.heldCursor) this.quickUseOrEquip(i);
+          else this.swapWithCursor(() => char.inventory[i], (s) => (char.inventory[i] = s));
+        },
         onContextMenu: () => this.quickUseOrEquip(i),
       });
       bagGrid.appendChild(slot);

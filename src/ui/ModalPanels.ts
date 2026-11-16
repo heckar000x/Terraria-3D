@@ -407,15 +407,29 @@ export class ModalPanels {
         <h3 style="margin:0;color:#ffd740;">Game Menu & Settings</h3>
         <button class="t-btn t-btn-gold" id="pause-resume">Resume Game</button>
       </div>
-      <div class="t-scroll" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;max-height:68vh;">
+      <div class="t-scroll" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;max-height:calc(90dvh - 60px);">
         <div class="t-panel" style="padding:10px;display:flex;flex-direction:column;gap:8px;font-size:12px;">
-          <b style="color:#ffd740;">Graphics & Camera</b>
+          <b style="color:#ffd740;">Graphics, FPS & Camera</b>
           <label>Preset:
             <select class="t-select" id="set-preset">
-              <option value="low" ${s.graphicsPreset === 'low' ? 'selected' : ''}>Low (High FPS)</option>
-              <option value="medium" ${s.graphicsPreset === 'medium' ? 'selected' : ''}>Medium (Balanced)</option>
+              <option value="low" ${s.graphicsPreset === 'low' ? 'selected' : ''}>Low (Turbo FPS)</option>
+              <option value="medium" ${s.graphicsPreset === 'medium' ? 'selected' : ''}>Medium (Balanced 60-120 FPS)</option>
               <option value="high" ${s.graphicsPreset === 'high' ? 'selected' : ''}>High (Full Shadows & AO)</option>
               <option value="custom" ${s.graphicsPreset === 'custom' ? 'selected' : ''}>Custom</option>
+            </select>
+          </label>
+          <label>Target FPS:
+            <select class="t-select" id="set-fps">
+              <option value="120" ${(s.targetFps ?? 120) >= 120 ? 'selected' : ''}>Up to 120 FPS (Uncapped)</option>
+              <option value="60" ${s.targetFps === 60 ? 'selected' : ''}>60 FPS (Smooth)</option>
+              <option value="30" ${s.targetFps === 30 ? 'selected' : ''}>30 FPS (Battery Saver)</option>
+            </select>
+          </label>
+          <label>Resolution Scale:
+            <select class="t-select" id="set-res">
+              <option value="1" ${(s.resolutionScale ?? 1) >= 0.95 ? 'selected' : ''}>100% Native Sharp</option>
+              <option value="0.85" ${(s.resolutionScale ?? 1) >= 0.8 && (s.resolutionScale ?? 1) < 0.95 ? 'selected' : ''}>85% Performance Boost</option>
+              <option value="0.7" ${(s.resolutionScale ?? 1) < 0.8 ? 'selected' : ''}>70% Ultra FPS</option>
             </select>
           </label>
           <label>Render Distance: <b>${s.renderDistance} chunks</b> <input type="range" id="set-rd" min="2" max="8" value="${s.renderDistance}" /></label>
@@ -438,13 +452,9 @@ export class ModalPanels {
           <label>Master Volume: <b>${Math.round(s.masterVolume * 100)}%</b> <input type="range" id="set-mv" min="0" max="1" step="0.05" value="${s.masterVolume}" /></label>
           <label>Music Volume: <b>${Math.round(s.musicVolume * 100)}%</b> <input type="range" id="set-muv" min="0" max="1" step="0.05" value="${s.musicVolume}" /></label>
           <label>SFX Volume: <b>${Math.round(s.sfxVolume * 100)}%</b> <input type="range" id="set-sv" min="0" max="1" step="0.05" value="${s.sfxVolume}" /></label>
-          <div style="background:rgba(12,18,38,0.65);padding:8px;border-radius:5px;line-height:1.5;color:#cbd7fa;">
-            <b>Controls:</b><br/>
-            WASD = Move · Space = Jump/Wings · Shift / Double-Tap = Dash<br/>
-            Left Click = Attack / Mine · Right Click = Place / Interact<br/>
-            G = Grappling Hook · R = Mount · V = 1st/3rd Person<br/>
-            H = Quick Heal · N = Quick Mana · 1-0 = Hotbar<br/>
-            E = Bag/Crafting · M = Map · B = Bestiary · J = Journey
+          <div style="background:rgba(12,18,38,0.65);padding:8px;border-radius:5px;line-height:1.45;color:#cbd7fa;">
+            <b>PC Controls:</b> WASD Move · Space Jump/Wings · Shift/Double-Tap Dash · Left Click Attack/Mine · Right Click Place/Interact · G Hook · R Mount · V Camera · H Heal · E Bag · M Map<br/>
+            <b>Mobile Horizontal:</b> Left Stick Move · Drag Screen Look · Pinch Zoom · ATK/USE/JUMP/DASH/HOOK/HEAL · Fullscreen Button Top-Right
           </div>
           <div style="display:flex;gap:8px;margin-top:auto;flex-wrap:wrap;">
             <button class="t-btn" id="btn-save-now">Save World Now</button>
@@ -463,12 +473,14 @@ export class ModalPanels {
     this.card.querySelector('#pause-resume')?.addEventListener('click', () => this.close());
     this.card.querySelector('#set-preset')?.addEventListener('change', (e) => {
       const val = (e.target as HTMLSelectElement).value as GameSettings['graphicsPreset'];
-      if (val === 'low') applyUpdate({ graphicsPreset: 'low', renderDistance: 3, shadows: false, ambientOcclusion: false, particleDensity: 0.4 });
-      else if (val === 'medium') applyUpdate({ graphicsPreset: 'medium', renderDistance: 4, shadows: true, ambientOcclusion: true, particleDensity: 0.8 });
-      else if (val === 'high') applyUpdate({ graphicsPreset: 'high', renderDistance: 6, shadows: true, ambientOcclusion: true, particleDensity: 1.0 });
+      if (val === 'low') applyUpdate({ graphicsPreset: 'low', renderDistance: 3, shadows: false, ambientOcclusion: false, particleDensity: 0.4, resolutionScale: 0.85, targetFps: 120 });
+      else if (val === 'medium') applyUpdate({ graphicsPreset: 'medium', renderDistance: 4, shadows: true, ambientOcclusion: true, particleDensity: 0.8, resolutionScale: 1.0, targetFps: 120 });
+      else if (val === 'high') applyUpdate({ graphicsPreset: 'high', renderDistance: 6, shadows: true, ambientOcclusion: true, particleDensity: 1.0, resolutionScale: 1.0, targetFps: 120 });
       else applyUpdate({ graphicsPreset: 'custom' });
       this.renderPause();
     });
+    this.card.querySelector('#set-fps')?.addEventListener('change', (e) => { applyUpdate({ targetFps: Number((e.target as HTMLSelectElement).value) as GameSettings['targetFps'] }); this.renderPause(); });
+    this.card.querySelector('#set-res')?.addEventListener('change', (e) => { applyUpdate({ resolutionScale: Number((e.target as HTMLSelectElement).value) }); this.renderPause(); });
     this.card.querySelector('#set-rd')?.addEventListener('input', (e) => { applyUpdate({ graphicsPreset: 'custom', renderDistance: Number((e.target as HTMLInputElement).value) }); this.renderPause(); });
     this.card.querySelector('#set-fov')?.addEventListener('input', (e) => { applyUpdate({ fov: Number((e.target as HTMLInputElement).value) }); this.renderPause(); });
     this.card.querySelector('#set-sens')?.addEventListener('input', (e) => { applyUpdate({ cameraSensitivity: Number((e.target as HTMLInputElement).value) }); this.renderPause(); });

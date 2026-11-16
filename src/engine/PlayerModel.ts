@@ -23,6 +23,9 @@ export class PlayerModel {
   private rightWingPivot = new THREE.Group();
   private shieldMesh!: THREE.Mesh;
   private heldItemGroup = new THREE.Group();
+  private swingTrailMesh!: THREE.Mesh;
+  private swingTrailMat!: THREE.MeshBasicMaterial;
+  private swingColor = '#ffffff';
 
   private skinMat!: THREE.MeshLambertMaterial;
   private shirtMat!: THREE.MeshLambertMaterial;
@@ -34,6 +37,7 @@ export class PlayerModel {
   private actionTimer = 0;
   private actionDuration = 0.3;
   private walkPhase = 0;
+  private idleClock = 0;
   private hurtFlash = 0;
   private currentAppearanceKey = '';
   private currentEquipKey = '';
@@ -144,6 +148,19 @@ export class PlayerModel {
     this.headGroup.add(headMesh, lEyeW, rEyeW, lEyeP, rEyeP, this.hairGroup, this.armorHeadGroup);
     this.rebuildHair(app.hairStyle);
 
+    this.swingTrailMat = new THREE.MeshBasicMaterial({
+      color: '#ffffff',
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const trailGeo = new THREE.RingGeometry(0.75, 1.35, 10, 1, -0.85, 1.8);
+    this.swingTrailMesh = new THREE.Mesh(trailGeo, this.swingTrailMat);
+    this.swingTrailMesh.position.set(0.18, 1.05, 0.45);
+    this.swingTrailMesh.rotation.y = Math.PI * 0.5;
+    this.swingTrailMesh.visible = false;
+
     this.bodyPivot.add(
       this.leftLegPivot,
       this.rightLegPivot,
@@ -153,7 +170,8 @@ export class PlayerModel {
       this.rightWingPivot,
       this.leftArmPivot,
       this.rightArmPivot,
-      this.headGroup
+      this.headGroup,
+      this.swingTrailMesh
     );
   }
 
@@ -284,9 +302,11 @@ export class PlayerModel {
 
     // Held Weapon / Tool / Block
     this.heldItemGroup.clear();
+    this.swingColor = '#e2e8f0';
     if (heldStack) {
       const def = getItemDef(heldStack.itemId);
       if (def) {
+        this.swingColor = def.iconAccent ?? def.iconColor;
         this.buildHeldMesh(def.iconShape, def.iconColor, def.iconAccent ?? '#ffffff');
       }
     }
@@ -352,6 +372,7 @@ export class PlayerModel {
   }
 
   public update(dt: number, state: PlayerAnimState, horizontalSpeed: number, aimPitch: number): void {
+    this.idleClock += dt;
     if (this.hurtFlash > 0) {
       this.hurtFlash = Math.max(0, this.hurtFlash - dt);
       const tint = this.hurtFlash > 0 ? '#ff6666' : null;
@@ -374,7 +395,7 @@ export class PlayerModel {
       this.leftArmPivot.rotation.x = state === 'glide' ? -1.1 : -0.5;
       this.bodyPivot.position.y = 0;
     } else {
-      const breath = Math.sin(performance.now() * 0.003) * 0.04;
+      const breath = Math.sin(this.idleClock * 3.0) * 0.04;
       this.leftLegPivot.rotation.x *= 0.82;
       this.rightLegPivot.rotation.x *= 0.82;
       this.leftArmPivot.rotation.x = breath;
@@ -384,7 +405,7 @@ export class PlayerModel {
     // Wings flap when airborne
     if (this.leftWingPivot.visible) {
       const flap = state === 'glide' || state === 'jump'
-        ? Math.sin(performance.now() * 0.022) * 0.65
+        ? Math.sin(this.idleClock * 22.0) * 0.65
         : 0.15;
       this.leftWingPivot.rotation.y = -0.3 - flap;
       this.rightWingPivot.rotation.y = 0.3 + flap;
@@ -393,29 +414,41 @@ export class PlayerModel {
     // Head look pitch
     this.headGroup.rotation.x = THREE.MathUtils.clamp(aimPitch * 0.5, -0.5, 0.5);
 
-    // Action arm overrides (Sword Swing, Pickaxe Mine, Bow/Gun Aim)
+    // Action arm overrides (Sword Swing, Pickaxe Mine, Bow/Gun Aim) + 3D Crescent Trail
     if (this.actionTimer > 0) {
       this.actionTimer = Math.max(0, this.actionTimer - dt);
       const p = 1 - this.actionTimer / this.actionDuration; // 0..1
       if (this.actionType === 'swing' || this.actionType === 'mine') {
-        // Classic Terraria overhead arc!
         this.rightArmPivot.rotation.x = -2.4 + p * 3.1;
         this.rightArmPivot.rotation.z = -0.25;
+        if (this.actionType === 'swing') {
+          this.swingTrailMesh.visible = true;
+          this.swingTrailMat.color.set(this.swingColor);
+          this.swingTrailMat.opacity = Math.sin(p * Math.PI) * 0.65;
+          this.swingTrailMesh.rotation.z = -0.6 + p * 1.4;
+        } else {
+          this.swingTrailMesh.visible = false;
+        }
       } else if (this.actionType === 'thrust') {
         this.rightArmPivot.rotation.x = -1.4 + Math.sin(p * Math.PI) * 0.4;
         this.rightArmPivot.rotation.z = 0;
+        this.swingTrailMesh.visible = true;
+        this.swingTrailMat.color.set(this.swingColor);
+        this.swingTrailMat.opacity = Math.sin(p * Math.PI) * 0.45;
       } else if (this.actionType === 'aim') {
         this.rightArmPivot.rotation.x = -Math.PI * 0.5 + aimPitch;
         this.rightArmPivot.rotation.z = 0;
+        this.swingTrailMesh.visible = false;
       }
     } else {
+      this.swingTrailMesh.visible = false;
       this.rightArmPivot.rotation.z = 0;
       if (state === 'walk' || state === 'run') {
         this.rightArmPivot.rotation.x = Math.sin(this.walkPhase) * 0.65;
       } else if (state === 'glide') {
         this.rightArmPivot.rotation.x = -1.1;
       } else {
-        this.rightArmPivot.rotation.x = -Math.sin(performance.now() * 0.003) * 0.04;
+        this.rightArmPivot.rotation.x = -Math.sin(this.idleClock * 3.0) * 0.04;
       }
     }
   }

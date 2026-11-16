@@ -414,6 +414,8 @@ const ITEM_LIST: ItemDef[] = [
   matItem('broken_hero_sword', 'Broken Hero Sword', '#66bb6a', 'yellow', 20000, undefined, 'sword'),
 
   // ==================== TOOLS: PICKAXES, AXES, HAMMERS, HOOKS, FISHING ====================
+  pickItem('wooden_pickaxe', 'Wooden Pickaxe', 25, 3, 0.42, '#9c6c41', 'white', 40, { tooltip: '25% pickaxe power - Mines dirt and stone quickly' }),
+  pickItem('stone_pickaxe', 'Stone Pickaxe', 35, 4, 0.38, '#8d9099', 'white', 120, { tooltip: '35% pickaxe power - Can mine Copper, Tin, Iron & Gold' }),
   pickItem('copper_pickaxe', 'Copper Pickaxe', 35, 4, 0.35, '#cf7742', 'white', 500),
   pickItem('tin_pickaxe', 'Tin Pickaxe', 35, 5, 0.34, '#aba896', 'white', 550),
   pickItem('cactus_pickaxe', 'Cactus Pickaxe', 35, 5, 0.34, '#4c9939', 'white', 400),
@@ -436,6 +438,8 @@ const ITEM_LIST: ItemDef[] = [
   pickItem('picksaw', 'Picksaw', 210, 34, 0.16, '#87481d', 'lime', 160000, { axePower: 125, tooltip: '210% pickaxe & 125% axe power - Can mine Lihzahrd Brick' }),
   pickItem('solar_flare_pickaxe', 'Solar Flare Pickaxe', 225, 80, 0.13, '#ff6d00', 'red', 300000, { toolRange: 9 }),
 
+  axeItem('wooden_axe', 'Wooden Axe', 25, 2, 0.46, '#9c6c41', 'white', 35, { tooltip: 'Chops entire trees quickly' }),
+  axeItem('stone_axe', 'Stone Axe', 35, 3, 0.43, '#8d9099', 'white', 100),
   axeItem('copper_axe', 'Copper Axe', 35, 3, 0.42, '#cf7742', 'white', 400),
   axeItem('iron_axe', 'Iron Axe', 45, 5, 0.38, '#a68c7c', 'white', 1000),
   axeItem('silver_axe', 'Silver Axe', 50, 6, 0.35, '#dce5ed', 'white', 2000),
@@ -446,6 +450,7 @@ const ITEM_LIST: ItemDef[] = [
   axeItem('molten_hamaxe', 'Molten Hamaxe', 150, 20, 0.32, '#ff5722', 'orange', 20000, { hammerPower: 70 }),
 
   hammerItem('wooden_hammer', 'Wooden Hammer', 25, 2, 0.45, '#9c6c41', 'white', 50),
+  hammerItem('stone_hammer', 'Stone Hammer', 30, 3, 0.42, '#8d9099', 'white', 120),
   hammerItem('copper_hammer', 'Copper Hammer', 35, 4, 0.4, '#cf7742', 'white', 400),
   hammerItem('iron_hammer', 'Iron Hammer', 45, 7, 0.38, '#a68c7c', 'white', 1000),
   hammerItem('gold_hammer', 'Gold Hammer', 55, 9, 0.35, '#ffd740', 'white', 4000),
@@ -469,6 +474,7 @@ const ITEM_LIST: ItemDef[] = [
   // ==================== MELEE WEAPONS ====================
   item({ id: 'copper_shortsword', name: 'Copper Shortsword', category: 'weapon', rarity: 'white', valueCopper: 350, weaponType: 'shortsword', damage: 5, damageType: 'melee', knockback: 4, useTime: 0.22, iconColor: '#cf7742', iconShape: 'sword' }),
   item({ id: 'wooden_sword', name: 'Wooden Sword', category: 'weapon', rarity: 'white', valueCopper: 100, weaponType: 'broadsword', damage: 7, damageType: 'melee', knockback: 4, useTime: 0.4, iconColor: '#9c6c41', iconShape: 'sword' }),
+  item({ id: 'stone_sword', name: 'Stone Sword', category: 'weapon', rarity: 'white', valueCopper: 200, weaponType: 'broadsword', damage: 10, damageType: 'melee', knockback: 4.5, useTime: 0.36, iconColor: '#8d9099', iconShape: 'sword' }),
   item({ id: 'cactus_sword', name: 'Cactus Sword', category: 'weapon', rarity: 'white', valueCopper: 360, weaponType: 'broadsword', damage: 10, damageType: 'melee', knockback: 5, useTime: 0.36, iconColor: '#4c9939', iconShape: 'sword' }),
   item({ id: 'copper_broadsword', name: 'Copper Broadsword', category: 'weapon', rarity: 'white', valueCopper: 450, weaponType: 'broadsword', damage: 9, damageType: 'melee', knockback: 5.5, useTime: 0.35, iconColor: '#cf7742', iconShape: 'sword' }),
   item({ id: 'iron_broadsword', name: 'Iron Broadsword', category: 'weapon', rarity: 'white', valueCopper: 1000, weaponType: 'broadsword', damage: 12, damageType: 'melee', knockback: 5.5, useTime: 0.33, iconColor: '#a68c7c', iconShape: 'sword' }),

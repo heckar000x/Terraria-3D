@@ -49,6 +49,8 @@ export interface VoxelShaderUniforms {
   uHeldLightPos: { value: THREE.Vector3 };
   uHeldLightColor: { value: THREE.Color };
   uHeldLightRadius: { value: number };
+  uTime: { value: number };
+  uCameraPos: { value: THREE.Vector3 };
 }
 
 export class WorldManager {
@@ -70,10 +72,16 @@ export class WorldManager {
     uHeldLightPos: { value: new THREE.Vector3(0, 140, 0) },
     uHeldLightColor: { value: new THREE.Color(1, 0.85, 0.55) },
     uHeldLightRadius: { value: 12 },
+    uTime: { value: 0 },
+    uCameraPos: { value: new THREE.Vector3(0, 145, 0) },
   };
 
   private workers: Worker[] = [];
   private pendingGen = new Set<string>();
+  private pendingMeshApplies: { col: ColumnEntry; meshes: SubchunkMeshResult[] }[] = [];
+  private lastShadowChunkKey = '';
+  private shadowCenterCx = 0;
+  private shadowCenterCz = 0;
   private nextWorker = 0;
   private reqId = 1;
   private activeLiquidQueue: [number, number, number][] = [];
@@ -106,53 +114,91 @@ export class WorldManager {
     this.enableShadows = enableShadows;
     this.atlas = new TextureAtlas();
 
-    const createVoxelMaterial = (opts: THREE.MeshLambertMaterialParameters) => {
+    const createVoxelMaterial = (
+      mode: 'solid' | 'cutout' | 'liquid',
+      opts: THREE.MeshLambertMaterialParameters
+    ) => {
       const mat = new THREE.MeshLambertMaterial(opts);
+      mat.customProgramCacheKey = () => `terraria_voxel_${mode}`;
       mat.onBeforeCompile = (shader) => {
         shader.uniforms.uSkyLightTint = this.shaderUniforms.uSkyLightTint;
         shader.uniforms.uMinCaveLight = this.shaderUniforms.uMinCaveLight;
         shader.uniforms.uHeldLightPos = this.shaderUniforms.uHeldLightPos;
         shader.uniforms.uHeldLightColor = this.shaderUniforms.uHeldLightColor;
         shader.uniforms.uHeldLightRadius = this.shaderUniforms.uHeldLightRadius;
+        shader.uniforms.uTime = this.shaderUniforms.uTime;
+        shader.uniforms.uCameraPos = this.shaderUniforms.uCameraPos;
+
+        let vertExtras = '';
+        if (mode === 'cutout') {
+          vertExtras = `
+            float swayMask = smoothstep(0.15, 0.9, fract(position.y + 0.01));
+            float windWave = sin(uTime * 2.1 + position.x * 0.75 + position.z * 0.65);
+            transformed.x += windWave * 0.035 * swayMask;
+            transformed.z += cos(uTime * 1.7 + position.z * 0.8) * 0.025 * swayMask;
+          `;
+        } else if (mode === 'liquid') {
+          vertExtras = `
+            float isTopVert = step(0.45, fract(position.y + 0.001));
+            float wave = sin(position.x * 1.45 + uTime * 2.5) * 0.048 + cos(position.z * 1.35 + uTime * 2.0) * 0.038;
+            transformed.y += wave * isTopVert;
+          `;
+        }
 
         shader.vertexShader = shader.vertexShader
           .replace(
             '#include <common>',
-            '#include <common>\nattribute vec4 aVoxelLight;\nvarying vec4 vVoxelLight;\nvarying vec3 vWorldPos;'
+            '#include <common>\nuniform float uTime;\nattribute vec4 aVoxelLight;\nvarying vec4 vVoxelLight;\nvarying vec3 vWorldPos;\nvarying vec3 vWorldNormal;'
           )
           .replace(
             '#include <color_vertex>',
-            '#include <color_vertex>\nvVoxelLight = aVoxelLight;\nvWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;'
+            '#include <color_vertex>\nvVoxelLight = aVoxelLight;\nvWorldNormal = normalize(mat3(modelMatrix) * normal);'
+          )
+          .replace(
+            '#include <begin_vertex>',
+            `#include <begin_vertex>\n${vertExtras}\nvWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`
           );
+
+        const liquidSpec =
+          mode === 'liquid'
+            ? `
+            vec3 viewDirW = normalize(uCameraPos - vWorldPos);
+            float fresnel = pow(1.0 - max(0.0, dot(viewDirW, normalize(vWorldNormal))), 3.0);
+            float ripple = sin(vWorldPos.x * 3.1 + uTime * 3.2) * cos(vWorldPos.z * 2.9 - uTime * 2.6);
+            outgoingLight += vec3(0.32, 0.56, 0.72) * (fresnel * 0.55 + max(0.0, ripple) * 0.14) * max(0.25, vVoxelLight.x);
+            `
+            : '';
 
         shader.fragmentShader = shader.fragmentShader
           .replace(
             '#include <common>',
-            '#include <common>\nuniform vec3 uSkyLightTint;\nuniform float uMinCaveLight;\nuniform vec3 uHeldLightPos;\nuniform vec3 uHeldLightColor;\nuniform float uHeldLightRadius;\nvarying vec4 vVoxelLight;\nvarying vec3 vWorldPos;'
+            '#include <common>\nuniform vec3 uSkyLightTint;\nuniform float uMinCaveLight;\nuniform vec3 uHeldLightPos;\nuniform vec3 uHeldLightColor;\nuniform float uHeldLightRadius;\nuniform float uTime;\nuniform vec3 uCameraPos;\nvarying vec4 vVoxelLight;\nvarying vec3 vWorldPos;\nvarying vec3 vWorldNormal;'
           )
           .replace(
             'vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + totalEmissiveRadiance;',
             `
             vec3 voxelSky = vVoxelLight.x * uSkyLightTint;
-            vec3 voxelBlock = vVoxelLight.yzw * 1.15;
+            vec3 voxelBlock = vVoxelLight.yzw * 1.18;
             float heldDist = distance(vWorldPos, uHeldLightPos);
             float heldAtten = clamp(1.0 - heldDist / max(1.0, uHeldLightRadius), 0.0, 1.0);
             vec3 heldGlow = uHeldLightColor * (heldAtten * heldAtten * 0.95);
-            vec3 voxelLight = max(max(voxelSky, max(voxelBlock, heldGlow)), vec3(uMinCaveLight));
-            vec3 outgoingLight = reflectedLight.directDiffuse * vVoxelLight.x + reflectedLight.indirectDiffuse * voxelLight + diffuseColor.rgb * (voxelBlock * 0.42 + heldGlow * 0.55) + totalEmissiveRadiance;
+            vec3 skyFill = vec3(0.76, 0.84, 0.98) * max(voxelSky, vec3(uMinCaveLight));
+            vec3 voxelLight = max(max(skyFill, voxelBlock), heldGlow);
+            vec3 outgoingLight = reflectedLight.directDiffuse * (vVoxelLight.x * 1.12) + reflectedLight.indirectDiffuse * voxelLight + diffuseColor.rgb * (voxelBlock * 0.48 + heldGlow * 0.55) + totalEmissiveRadiance;
+            ${liquidSpec}
             `
           );
       };
       return mat;
     };
 
-    this.solidMat = createVoxelMaterial({
+    this.solidMat = createVoxelMaterial('solid', {
       map: this.atlas.texture,
       vertexColors: true,
       side: THREE.FrontSide,
     });
 
-    this.cutoutMat = createVoxelMaterial({
+    this.cutoutMat = createVoxelMaterial('cutout', {
       map: this.atlas.texture,
       vertexColors: true,
       alphaTest: 0.35,
@@ -160,7 +206,7 @@ export class WorldManager {
       side: THREE.DoubleSide,
     });
 
-    this.liquidMat = createVoxelMaterial({
+    this.liquidMat = createVoxelMaterial('liquid', {
       map: this.atlas.texture,
       vertexColors: true,
       transparent: true,
@@ -200,13 +246,26 @@ export class WorldManager {
       this.pendingGen.delete(key);
       if (this.columns.has(key)) return;
       const col = this.registerColumnData(msg.cx, msg.cz, msg.blocks, msg.walls, msg.chests);
-      this.applyMeshesToColumn(col, msg.meshes);
+      this.pendingMeshApplies.push({ col, meshes: msg.meshes });
     } else if (msg.type === 'meshed') {
       const col = this.columns.get(key);
       if (col) {
-        this.applyMeshesToColumn(col, msg.meshes);
+        this.pendingMeshApplies.push({ col, meshes: msg.meshes });
       }
     }
+  }
+
+  private getNeighborColumnsData(cx: number, cz: number) {
+    const px = this.columns.get(this.colKey(cx + 1, cz));
+    const nx = this.columns.get(this.colKey(cx - 1, cz));
+    const pz = this.columns.get(this.colKey(cx, cz + 1));
+    const nz = this.columns.get(this.colKey(cx, cz - 1));
+    return {
+      px: px && px.lighting ? { blocks: px.blocks, lighting: px.lighting } : undefined,
+      nx: nx && nx.lighting ? { blocks: nx.blocks, lighting: nx.lighting } : undefined,
+      pz: pz && pz.lighting ? { blocks: pz.blocks, lighting: pz.lighting } : undefined,
+      nz: nz && nz.lighting ? { blocks: nz.blocks, lighting: nz.lighting } : undefined,
+    };
   }
 
   public colKey(cx: number, cz: number): string {
@@ -230,7 +289,7 @@ export class WorldManager {
     const col = this.registerColumnData(cx, cz, gen.blocks, gen.walls, gen.chests);
     if (this.scene && this.atlas) {
       col.lighting = computeColumnLighting(col.blocks);
-      const meshes = meshColumnSubchunks(cx, cz, col.blocks, col.lighting, (n) => this.atlas!.getUV(n), {}, this.enableAO);
+      const meshes = meshColumnSubchunks(cx, cz, col.blocks, col.lighting, (n) => this.atlas!.getUV(n), this.getNeighborColumnsData(cx, cz), this.enableAO);
       this.applyMeshesToColumn(col, meshes);
     }
     return col;
@@ -307,13 +366,16 @@ export class WorldManager {
       this.scene.add(col.group);
     }
 
+    const inShadowRange =
+      Math.abs(col.cx - this.shadowCenterCx) <= 3 && Math.abs(col.cz - this.shadowCenterCz) <= 3;
+
     for (const sub of results) {
       const slot = col.subMeshes[sub.cy];
       const updateLayer = (
         key: 'solid' | 'cutout' | 'liquid',
         buf: MeshBuffers | null,
         mat: THREE.MeshLambertMaterial,
-        castShadow: boolean
+        allowCastShadow: boolean
       ) => {
         if (slot[key]) {
           col.group!.remove(slot[key]!);
@@ -323,8 +385,8 @@ export class WorldManager {
         if (buf) {
           const geo = this.createBufferGeometry(buf);
           const mesh = new THREE.Mesh(geo, mat);
-          mesh.castShadow = castShadow && this.enableShadows;
-          mesh.receiveShadow = this.enableShadows;
+          mesh.castShadow = allowCastShadow && this.enableShadows && inShadowRange && sub.cy >= 5;
+          mesh.receiveShadow = this.enableShadows && sub.cy >= 5;
           col.group!.add(mesh);
           slot[key] = mesh;
         }
@@ -336,9 +398,45 @@ export class WorldManager {
     }
   }
 
+  public refreshShadowCasters(pcx: number, pcz: number): void {
+    this.shadowCenterCx = pcx;
+    this.shadowCenterCz = pcz;
+    for (const col of this.columns.values()) {
+      const inRange = Math.abs(col.cx - pcx) <= 3 && Math.abs(col.cz - pcz) <= 3;
+      for (let cy = 0; cy < col.subMeshes.length; cy++) {
+        const slot = col.subMeshes[cy];
+        if (slot.solid) {
+          slot.solid.castShadow = this.enableShadows && inRange && cy >= 5;
+          slot.solid.receiveShadow = this.enableShadows && cy >= 5;
+        }
+        if (slot.cutout) {
+          slot.cutout.receiveShadow = this.enableShadows && cy >= 5;
+        }
+      }
+    }
+  }
+
   public updateStreaming(playerX: number, playerZ: number, renderDist: number): void {
     const pcx = Math.floor(playerX / CHUNK_SIZE);
     const pcz = Math.floor(playerZ / CHUNK_SIZE);
+    this.shadowCenterCx = pcx;
+    this.shadowCenterCz = pcz;
+
+    const shadowKey = `${pcx},${pcz},${this.enableShadows}`;
+    if (shadowKey !== this.lastShadowChunkKey) {
+      this.lastShadowChunkKey = shadowKey;
+      this.refreshShadowCasters(pcx, pcz);
+    }
+
+    // Apply at most 2 completed worker chunk meshes per frame to keep frame times ultra-smooth!
+    let applied = 0;
+    while (this.pendingMeshApplies.length > 0 && applied < 2) {
+      const job = this.pendingMeshApplies.shift()!;
+      if (this.columns.has(this.colKey(job.col.cx, job.col.cz))) {
+        this.applyMeshesToColumn(job.col, job.meshes);
+        applied++;
+      }
+    }
 
     // Load spiral outward from player
     const targets: [number, number, number][] = [];
@@ -358,7 +456,7 @@ export class WorldManager {
       if (!this.columns.has(key) && !this.pendingGen.has(key)) {
         if (d2 <= 2) {
           this.getColumnSync(cx, cz); // Immediate near player
-        } else if (queued < 4) {
+        } else if (queued < 3) {
           this.requestColumnAsync(cx, cz);
           queued++;
         }
@@ -369,8 +467,9 @@ export class WorldManager {
     for (const col of this.columns.values()) {
       if (col.dirtySubchunks.size > 0 && this.scene && this.atlas) {
         col.lighting = computeColumnLighting(col.blocks);
+        const nb = this.getNeighborColumnsData(col.cx, col.cz);
         for (const cy of col.dirtySubchunks) {
-          const meshes = meshColumnSubchunks(col.cx, col.cz, col.blocks, col.lighting, (n) => this.atlas!.getUV(n), {}, this.enableAO, cy);
+          const meshes = meshColumnSubchunks(col.cx, col.cz, col.blocks, col.lighting, (n) => this.atlas!.getUV(n), nb, this.enableAO, cy);
           this.applyMeshesToColumn(col, meshes);
         }
         col.dirtySubchunks.clear();
@@ -619,9 +718,8 @@ export class WorldManager {
     if ((b === BlockId.DemonAltar || b === BlockId.CrimsonAltar) && (!this.meta.isHardmode || hammerPower < 80)) {
       return { broken: false, drops: [], reason: 'Requires Hardmode & Pwnhammer (80%+ Hammer)' };
     }
-    if (b === BlockId.Wood && axePower <= 0 && pickPower < 35) {
-      return { broken: false, drops: [], reason: 'Requires an Axe' };
-    }
+    // Note: Wood can be punched 1 block at a time with bare hands when starting empty-handed!
+    // Using an Axe triggers the full tree cascade chop below.
 
     const drops: { itemId: string; count: number }[] = [];
 
