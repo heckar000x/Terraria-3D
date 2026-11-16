@@ -1,0 +1,29 @@
+{
+  "name": "terraria-3d",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Terraria 3D — Complete, playable, true 3D voxel recreation of Terraria",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "build:portable": "tsc --noEmit && STANDALONE=true vite build --outDir portable",
+    "preview": "vite preview --host 0.0.0.0 --port 4173",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/three": "^0.187.0",
+    "fake-indexeddb": "^6.2.8",
+    "jsdom": "^27.0.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.8",
+    "vite-plugin-singlefile": "^2.3.0",
+    "vitest": "^5.1.0"
+  }
+}
