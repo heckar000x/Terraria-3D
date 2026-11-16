@@ -59,7 +59,8 @@ export class TitleScreen {
     this.root.appendChild(this.bgCanvas);
 
     this.contentEl = document.createElement('div');
-    this.contentEl.style.cssText = 'position:relative;z-index:1;width:min(860px,94vw);max-height:90vh;display:flex;flex-direction:column;align-items:center;gap:14px;';
+    this.contentEl.className = 't-scroll';
+    this.contentEl.style.cssText = 'position:relative;z-index:1;width:min(860px,94vw);max-height:94dvh;padding:10px 0;display:flex;flex-direction:column;align-items:center;gap:12px;';
     this.root.appendChild(this.contentEl);
 
     this.render();
@@ -163,7 +164,7 @@ export class TitleScreen {
         <button class="t-btn" id="m-ach">Achievements (${this.characters[0]?.unlockedAchievements.length ?? 0}/${ACHIEVEMENTS.length})</button>
         <button class="t-btn" id="m-check">Content & Feature Status</button>
       </div>
-      <div style="font-size:12px;color:#c2d4f8;text-shadow:0 1px 3px #000;">WebGL2 · Procedural Voxel Engine · Desktop & Mobile Ready</div>
+      <div style="font-size:12px;color:#c2d4f8;text-shadow:0 1px 3px #000;">WebGL2 · Procedural Voxel Engine · Up to 120 FPS · Desktop & Mobile Landscape</div>
     `;
 
     this.contentEl.querySelector('#m-quick')?.addEventListener('click', () => void this.handleQuickPlay());
@@ -401,12 +402,26 @@ export class TitleScreen {
           <h2 style="margin:0;color:#ffd740;">Settings</h2>
           <button class="t-btn" id="s-back">Back</button>
         </div>
-        <div style="display:flex;flex-direction:column;gap:8px;font-size:13px;">
+        <div class="t-scroll" style="display:flex;flex-direction:column;gap:8px;font-size:13px;max-height:66dvh;">
           <label>Graphics Preset:
             <select class="t-select" id="ts-preset">
-              <option value="low" ${s.graphicsPreset === 'low' ? 'selected' : ''}>Low</option>
-              <option value="medium" ${s.graphicsPreset === 'medium' ? 'selected' : ''}>Medium</option>
-              <option value="high" ${s.graphicsPreset === 'high' ? 'selected' : ''}>High</option>
+              <option value="low" ${s.graphicsPreset === 'low' ? 'selected' : ''}>Low (Turbo FPS)</option>
+              <option value="medium" ${s.graphicsPreset === 'medium' ? 'selected' : ''}>Medium (Balanced)</option>
+              <option value="high" ${s.graphicsPreset === 'high' ? 'selected' : ''}>High (Full Shadows & AO)</option>
+            </select>
+          </label>
+          <label>Target FPS:
+            <select class="t-select" id="ts-fps">
+              <option value="120" ${(s.targetFps ?? 120) >= 120 ? 'selected' : ''}>Up to 120 FPS (Uncapped)</option>
+              <option value="60" ${s.targetFps === 60 ? 'selected' : ''}>60 FPS (Smooth)</option>
+              <option value="30" ${s.targetFps === 30 ? 'selected' : ''}>30 FPS (Battery Saver)</option>
+            </select>
+          </label>
+          <label>Resolution Scale:
+            <select class="t-select" id="ts-res">
+              <option value="1" ${(s.resolutionScale ?? 1) >= 0.95 ? 'selected' : ''}>100% Native Sharp</option>
+              <option value="0.85" ${(s.resolutionScale ?? 1) >= 0.8 && (s.resolutionScale ?? 1) < 0.95 ? 'selected' : ''}>85% Performance Boost</option>
+              <option value="0.7" ${(s.resolutionScale ?? 1) < 0.8 ? 'selected' : ''}>70% Ultra FPS</option>
             </select>
           </label>
           <label>Render Distance: <b>${s.renderDistance}</b> <input type="range" id="ts-rd" min="2" max="8" value="${s.renderDistance}" /></label>
@@ -425,12 +440,14 @@ export class TitleScreen {
     this.contentEl.querySelector('#ts-preset')?.addEventListener('change', (e) => {
       const val = (e.target as HTMLSelectElement).value as GameSettings['graphicsPreset'];
       s.graphicsPreset = val;
-      if (val === 'low') { s.renderDistance = 3; s.shadows = false; s.ambientOcclusion = false; }
-      else if (val === 'medium') { s.renderDistance = 4; s.shadows = true; s.ambientOcclusion = true; }
-      else { s.renderDistance = 6; s.shadows = true; s.ambientOcclusion = true; }
+      if (val === 'low') { s.renderDistance = 3; s.shadows = false; s.ambientOcclusion = false; s.resolutionScale = 0.85; }
+      else if (val === 'medium') { s.renderDistance = 4; s.shadows = true; s.ambientOcclusion = true; s.resolutionScale = 1.0; }
+      else { s.renderDistance = 6; s.shadows = true; s.ambientOcclusion = true; s.resolutionScale = 1.0; }
       this.saveManager.saveSettings(s);
       this.renderSettings();
     });
+    this.contentEl.querySelector('#ts-fps')?.addEventListener('change', (e) => { s.targetFps = Number((e.target as HTMLSelectElement).value) as GameSettings['targetFps']; this.saveManager.saveSettings(s); });
+    this.contentEl.querySelector('#ts-res')?.addEventListener('change', (e) => { s.resolutionScale = Number((e.target as HTMLSelectElement).value); this.saveManager.saveSettings(s); });
     this.contentEl.querySelector('#ts-rd')?.addEventListener('input', (e) => { s.renderDistance = Number((e.target as HTMLInputElement).value); this.saveManager.saveSettings(s); this.renderSettings(); });
     this.contentEl.querySelector('#ts-mv')?.addEventListener('input', (e) => { s.masterVolume = Number((e.target as HTMLInputElement).value); this.saveManager.saveSettings(s); this.audio.setVolumes(s.masterVolume, s.musicVolume, s.sfxVolume); this.renderSettings(); });
     this.contentEl.querySelector('#ts-mob')?.addEventListener('change', (e) => { s.touchControlsMode = (e.target as HTMLSelectElement).value as GameSettings['touchControlsMode']; this.saveManager.saveSettings(s); });

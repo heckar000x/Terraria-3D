@@ -168,24 +168,69 @@ export class TextureAtlas {
       }
     };
 
+    const drawBark = (base: string, groove: string, highlight: string) => {
+      fillNoisy(base, groove, highlight, 0.25);
+      for (let x = 1; x < TILE_PX; x += 3) {
+        for (let y = 0; y < TILE_PX; y++) {
+          if (hashCoords(seed + 19, x, y) > 0.32) {
+            ctx.fillStyle = x % 2 === 1 ? groove : highlight;
+            ctx.fillRect(ox + x, oy + y, 1, 1);
+          }
+        }
+      }
+    };
+
+    const drawWoodRings = (outer: string, inner: string, ring: string) => {
+      fillNoisy(outer, ring, inner, 0.22);
+      ctx.fillStyle = inner;
+      ctx.fillRect(ox + 2, oy + 2, 12, 12);
+      ctx.fillStyle = ring;
+      ctx.fillRect(ox + 4, oy + 4, 8, 8);
+      ctx.fillStyle = inner;
+      ctx.fillRect(ox + 6, oy + 6, 4, 4);
+    };
+
+    const drawLeaf = (base: string, dark: string, light: string) => {
+      ctx.clearRect(ox, oy, TILE_PX, TILE_PX);
+      for (let y = 0; y < TILE_PX; y++) {
+        for (let x = 0; x < TILE_PX; x++) {
+          const r = hashCoords(seed + 31, x, y);
+          // Leave crisp tiny foliage gaps so sunlight and sky filter through trees!
+          if (r < 0.14) continue;
+          ctx.fillStyle = r < 0.42 ? dark : r > 0.78 ? light : base;
+          ctx.fillRect(ox + x, oy + y, 1, 1);
+        }
+      }
+    };
+
     switch (name) {
-      case 'dirt': fillNoisy('#8f5f3c', '#73492b', '#a6734e'); break;
-      case 'grass_top': fillNoisy('#48a842', '#378a32', '#64c95b'); break;
-      case 'grass_side': drawGrassSide('#8f5f3c', '#73492b', '#48a842', '#64c95b'); break;
-      case 'stone': fillNoisy('#7d7d82', '#636369', '#94949c'); break;
-      case 'sand': fillNoisy('#e0c975', '#c7af5a', '#f2de94'); break;
+      case 'dirt': fillNoisy('#8f5f3c', '#704628', '#ab7852', 0.28); break;
+      case 'grass_top': fillNoisy('#49b043', '#348c2f', '#6fd665', 0.28); break;
+      case 'grass_side': drawGrassSide('#8f5f3c', '#704628', '#49b043', '#6fd665'); break;
+      case 'stone':
+        fillNoisy('#7c7e85', '#606269', '#999ca3', 0.26);
+        ctx.fillStyle = '#585a61';
+        ctx.fillRect(ox + 2, oy + 4, 5, 1);
+        ctx.fillRect(ox + 9, oy + 11, 6, 1);
+        break;
+      case 'sand': fillNoisy('#e3cc78', '#c7af5a', '#f7e5a1', 0.22); break;
       case 'hardened_sand': fillNoisy('#c99b52', '#ab7f3a', '#deb26d'); break;
       case 'sandstone': drawBricks('#b87d3b', '#8f5d24', '#d19552'); break;
       case 'mud': fillNoisy('#5c443d', '#45312b', '#75584f'); break;
       case 'clay': fillNoisy('#9c634f', '#7d4a38', '#b57b65'); break;
-      case 'snow': fillNoisy('#e8f5fc', '#cde4f2', '#ffffff'); break;
-      case 'ice': fillNoisy('#8ccdf2', '#6db5e0', '#b5e3fc', 0.18); break;
+      case 'snow': fillNoisy('#ecf7ff', '#cfe6f5', '#ffffff', 0.22); break;
+      case 'ice':
+        fillNoisy('#8ccdf2', '#6db5e0', '#c4ecff', 0.2);
+        ctx.fillStyle = '#e6f8ff';
+        ctx.fillRect(ox + 2, oy + 3, 5, 1);
+        ctx.fillRect(ox + 9, oy + 10, 4, 1);
+        break;
       case 'thin_ice': fillNoisy('#b5e3fc', '#8ccdf2', '#e8f8ff', 0.2); break;
       case 'ash': fillNoisy('#453e42', '#2e282c', '#5c5459'); break;
-      case 'obsidian': fillNoisy('#291f42', '#171029', '#4a3a73', 0.2); break;
-      case 'ebonstone': fillNoisy('#4c3e66', '#35294a', '#655485'); break;
-      case 'crimstone': fillNoisy('#782e34', '#571c21', '#994148'); break;
-      case 'pearlstone': fillNoisy('#c4b8cf', '#a395b0', '#e2d7eb'); break;
+      case 'obsidian': fillNoisy('#291f42', '#171029', '#554385', 0.24); break;
+      case 'ebonstone': fillNoisy('#4c3e66', '#35294a', '#6a588c'); break;
+      case 'crimstone': fillNoisy('#782e34', '#571c21', '#9e444b'); break;
+      case 'pearlstone': fillNoisy('#c4b8cf', '#a395b0', '#e6dcf0'); break;
       case 'corrupt_grass_top': fillNoisy('#6e5299', '#523978', '#8c6ec2'); break;
       case 'corrupt_grass_side': drawGrassSide('#8f5f3c', '#73492b', '#6e5299', '#8c6ec2'); break;
       case 'crimson_grass_top': fillNoisy('#ba363c', '#8f2429', '#de5259'); break;
@@ -199,32 +244,32 @@ export class TextureAtlas {
       case 'glowing_mushroom_block':
         ctx.fillStyle = '#2b47ba';
         ctx.fillRect(ox, oy, TILE_PX, TILE_PX);
-        ctx.fillStyle = '#75a6ff';
+        ctx.fillStyle = '#8cb6ff';
         ctx.fillRect(ox + 2, oy + 2, 4, 4);
         ctx.fillRect(ox + 10, oy + 3, 3, 3);
         ctx.fillRect(ox + 5, oy + 10, 5, 4);
         break;
-      case 'wood_top': fillNoisy('#b08354', '#7a5432', '#cfa374'); break;
-      case 'wood_side': fillNoisy('#7a5432', '#593b20', '#966b43', 0.35); break;
+      case 'wood_top': drawWoodRings('#7a5432', '#b88b5b', '#664324'); break;
+      case 'wood_side': drawBark('#7a5432', '#52351b', '#996d43'); break;
       case 'wood_plank': drawPlanks('#a87849', '#7d542d', '#bf8e5c'); break;
-      case 'boreal_wood_top': fillNoisy('#8c705c', '#5e4738', '#a68b76'); break;
-      case 'boreal_wood_side': fillNoisy('#695140', '#4a372a', '#826754', 0.35); break;
-      case 'palm_wood_top': fillNoisy('#d1ab73', '#997440', '#e3c18d'); break;
-      case 'palm_wood_side': fillNoisy('#b38b54', '#8a6738', '#cca268', 0.35); break;
-      case 'mahogany_top': fillNoisy('#9e574e', '#692f29', '#b86c63'); break;
-      case 'mahogany_side': fillNoisy('#7d4039', '#572822', '#99534b', 0.35); break;
-      case 'ebonwood_top': fillNoisy('#6d6280', '#443b54', '#877b9c'); break;
-      case 'ebonwood_side': fillNoisy('#524961', '#383045', '#6b607d', 0.35); break;
-      case 'shadewood_top': fillNoisy('#8a5259', '#572d32', '#a66870'); break;
-      case 'shadewood_side': fillNoisy('#693c42', '#472529', '#824e55', 0.35); break;
-      case 'pearlwood_top': fillNoisy('#ded1b4', '#b0a07f', '#f0e5cc'); break;
-      case 'pearlwood_side': fillNoisy('#c7b897', '#9e8f6f', '#ded0b1', 0.35); break;
-      case 'living_wood': fillNoisy('#6e4726', '#4a2d15', '#875c36', 0.32); break;
-      case 'leaf': fillNoisy('#3c8f38', '#256322', '#5cb557', 0.3); break;
-      case 'boreal_leaf': fillNoisy('#4a7a78', '#2f5452', '#679c99', 0.3); break;
-      case 'jungle_leaf': fillNoisy('#3d992b', '#266b18', '#5ec248', 0.3); break;
-      case 'palm_leaf': fillNoisy('#69ad38', '#457d1e', '#88cc52', 0.3); break;
-      case 'hallowed_leaf': fillNoisy('#56c2d6', '#338fa1', '#87e4f5', 0.3); break;
+      case 'boreal_wood_top': drawWoodRings('#695140', '#947864', '#4d392b'); break;
+      case 'boreal_wood_side': drawBark('#695140', '#453326', '#856a57'); break;
+      case 'palm_wood_top': drawWoodRings('#b38b54', '#d6b078', '#8c6939'); break;
+      case 'palm_wood_side': drawBark('#b38b54', '#856334', '#cfa56a'); break;
+      case 'mahogany_top': drawWoodRings('#7d4039', '#a65d54', '#592923'); break;
+      case 'mahogany_side': drawBark('#7d4039', '#52251f', '#9c564d'); break;
+      case 'ebonwood_top': drawWoodRings('#524961', '#75698a', '#383045'); break;
+      case 'ebonwood_side': drawBark('#524961', '#352d42', '#6d6280'); break;
+      case 'shadewood_top': drawWoodRings('#693c42', '#8f575f', '#472529'); break;
+      case 'shadewood_side': drawBark('#693c42', '#452428', '#855057'); break;
+      case 'pearlwood_top': drawWoodRings('#c7b897', '#e3d5b8', '#a39473'); break;
+      case 'pearlwood_side': drawBark('#c7b897', '#9c8d6d', '#e0d3b4'); break;
+      case 'living_wood': drawBark('#6e4726', '#472a12', '#8a5f39'); break;
+      case 'leaf': drawLeaf('#3c9438', '#246621', '#62c25c'); break;
+      case 'boreal_leaf': drawLeaf('#4a7a78', '#2d5250', '#6da3a0'); break;
+      case 'jungle_leaf': drawLeaf('#3d9e2b', '#256e17', '#63cc4c'); break;
+      case 'palm_leaf': drawLeaf('#69ad38', '#457d1e', '#8cd455'); break;
+      case 'hallowed_leaf': drawLeaf('#56c2d6', '#338fa1', '#8ce8fa'); break;
 
       // Ores & Gems
       case 'copper_ore': drawOre('#7d7d82', '#636369', '#bd6a3e', '#f29e6d'); break;
@@ -303,8 +348,18 @@ export class TextureAtlas {
         break;
 
       // Liquids
-      case 'water': fillNoisy('rgba(35, 137, 218, 0.78)', 'rgba(20, 100, 180, 0.82)', 'rgba(110, 195, 255, 0.75)', 0.2); break;
-      case 'lava': fillNoisy('#ff5214', '#c92b04', '#ffbe3d', 0.3); break;
+      case 'water':
+        fillNoisy('rgba(32, 146, 232, 0.8)', 'rgba(18, 108, 194, 0.84)', 'rgba(128, 212, 255, 0.78)', 0.22);
+        ctx.fillStyle = 'rgba(205, 244, 255, 0.45)';
+        ctx.fillRect(ox + 2, oy + 3, 5, 1);
+        ctx.fillRect(ox + 9, oy + 10, 5, 1);
+        break;
+      case 'lava':
+        fillNoisy('#ff5214', '#c42704', '#ffd04d', 0.32);
+        ctx.fillStyle = '#fff080';
+        ctx.fillRect(ox + 3, oy + 4, 4, 2);
+        ctx.fillRect(ox + 10, oy + 11, 3, 2);
+        break;
       case 'honey': fillNoisy('rgba(242, 183, 36, 0.85)', 'rgba(204, 136, 12, 0.88)', 'rgba(255, 224, 102, 0.85)', 0.2); break;
 
       // Torches, Plants, Stations, Chests

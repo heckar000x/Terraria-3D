@@ -117,6 +117,9 @@ export interface BossHudInfo {
 export class EntityManager {
   private scene: THREE.Scene | null = null;
   private nextId = 1;
+  private tmpVec1 = new THREE.Vector3();
+  private tmpVec2 = new THREE.Vector3();
+  private tmpVec3 = new THREE.Vector3();
 
   public drops: DroppedItemEntity[] = [];
   public projectiles: ProjectileEntity[] = [];
@@ -327,16 +330,36 @@ export class EntityManager {
     const secMat = new THREE.MeshLambertMaterial({ color: def.colorSecondary });
 
     if (def.aiType === 'slime') {
-      const dome = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), primMat);
-      dome.position.y = h * 0.5;
-      const core = new THREE.Mesh(new THREE.BoxGeometry(w * 0.48, h * 0.48, d * 0.48), secMat);
-      core.position.y = h * 0.45;
-      g.add(dome, core);
+      const dome = new THREE.Mesh(new THREE.BoxGeometry(w, h * 0.85, d), primMat);
+      dome.position.y = h * 0.425;
+      dome.castShadow = true;
+      const crown = new THREE.Mesh(new THREE.BoxGeometry(w * 0.72, h * 0.22, d * 0.72), primMat);
+      crown.position.y = h * 0.92;
+      const core = new THREE.Mesh(new THREE.BoxGeometry(w * 0.44, h * 0.42, d * 0.44), secMat);
+      core.position.y = h * 0.42;
+      const eyeWMat = new THREE.MeshBasicMaterial({ color: '#ffffff' });
+      const eyeBMat = new THREE.MeshBasicMaterial({ color: '#111827' });
+      const lEye = new THREE.Mesh(new THREE.BoxGeometry(w * 0.14, h * 0.16, 0.04), eyeWMat);
+      lEye.position.set(-w * 0.19, h * 0.54, d * 0.5);
+      const rEye = new THREE.Mesh(new THREE.BoxGeometry(w * 0.14, h * 0.16, 0.04), eyeWMat);
+      rEye.position.set(w * 0.19, h * 0.54, d * 0.5);
+      const lPup = new THREE.Mesh(new THREE.BoxGeometry(w * 0.07, h * 0.09, 0.05), eyeBMat);
+      lPup.position.set(-w * 0.19, h * 0.53, d * 0.51);
+      const rPup = new THREE.Mesh(new THREE.BoxGeometry(w * 0.07, h * 0.09, 0.05), eyeBMat);
+      rPup.position.set(w * 0.19, h * 0.53, d * 0.51);
+      g.add(dome, crown, core, lEye, rEye, lPup, rPup);
     } else if (def.aiType === 'fighter' || def.aiType === 'caster') {
       const torso = new THREE.Mesh(new THREE.BoxGeometry(w * 0.65, h * 0.38, d * 0.45), secMat);
       torso.position.y = h * 0.55;
+      torso.castShadow = true;
       const head = new THREE.Mesh(new THREE.BoxGeometry(w * 0.55, h * 0.28, d * 0.55), primMat);
       head.position.y = h * 0.86;
+      head.castShadow = true;
+      const eyeMat = new THREE.MeshBasicMaterial({ color: def.emissiveColor ?? '#ff5252' });
+      const eyeL = new THREE.Mesh(new THREE.BoxGeometry(w * 0.1, h * 0.06, 0.04), eyeMat);
+      eyeL.position.set(-w * 0.12, h * 0.87, d * 0.28);
+      const eyeR = new THREE.Mesh(new THREE.BoxGeometry(w * 0.1, h * 0.06, 0.04), eyeMat);
+      eyeR.position.set(w * 0.12, h * 0.87, d * 0.28);
       const lArm = new THREE.Mesh(new THREE.BoxGeometry(w * 0.22, h * 0.35, d * 0.22), primMat);
       lArm.position.set(-w * 0.44, h * 0.6, d * 0.22);
       lArm.rotation.x = -Math.PI * 0.45;
@@ -347,7 +370,7 @@ export class EntityManager {
       lLeg.position.set(-w * 0.18, h * 0.18, 0);
       const rLeg = new THREE.Mesh(new THREE.BoxGeometry(w * 0.25, h * 0.36, d * 0.28), secMat);
       rLeg.position.set(w * 0.18, h * 0.18, 0);
-      g.add(torso, head, lArm, rArm, lLeg, rLeg);
+      g.add(torso, head, eyeL, eyeR, lArm, rArm, lLeg, rLeg);
     } else if (def.aiType === 'flying') {
       const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), primMat);
       const iris = new THREE.Mesh(new THREE.BoxGeometry(w * 0.45, h * 0.45, 0.08), secMat);
@@ -555,15 +578,16 @@ export class EntityManager {
     spawnRateMult = 1.0
   ): void {
     const clampedDt = Math.min(0.05, dt);
+    const playerCenter = this.tmpVec1.set(playerPos.x, playerPos.y + 0.9, playerPos.z);
 
     // 1. Update Drops + Magnetic Pickup
     for (let i = this.drops.length - 1; i >= 0; i--) {
       const d = this.drops[i];
       d.age += clampedDt;
-      const distToPlayer = d.position.distanceTo(playerPos.clone().add(new THREE.Vector3(0, 0.9, 0)));
+      const distToPlayer = d.position.distanceTo(playerCenter);
       if (d.age > 0.35 && distToPlayer < 3.4) {
-        const pull = playerPos.clone().add(new THREE.Vector3(0, 0.9, 0)).sub(d.position).normalize().multiplyScalar(14);
-        d.position.addScaledVector(pull, clampedDt);
+        this.tmpVec2.copy(playerCenter).sub(d.position).normalize().multiplyScalar(14);
+        d.position.addScaledVector(this.tmpVec2, clampedDt);
       } else {
         d.velocity.y -= 20 * clampedDt;
         const ny = d.position.y + d.velocity.y * clampedDt;
@@ -729,9 +753,9 @@ export class EntityManager {
       this.updateEnemyAI(e, clampedDt, world, playerPos, dmgMult);
 
       // Contact hit player
-      const dist = e.position.distanceTo(playerPos.clone().add(new THREE.Vector3(0, 0.8, 0)));
+      const dist = e.position.distanceTo(playerCenter);
       if (dist < (e.def.size[0] * 0.5 + 0.65)) {
-        const kDir = playerPos.clone().sub(e.position).setY(0.3).normalize();
+        const kDir = this.tmpVec2.copy(playerPos).sub(e.position).setY(0.3).normalize();
         this.onPlayerHit?.(Math.round(e.def.damage * dmgMult), e.def.name, kDir);
       }
     }
@@ -741,8 +765,8 @@ export class EntityManager {
       const b = this.bosses[i];
       this.updateBossAI(b, clampedDt, world, playerPos, dmgMult, particles);
       const hitRadius = b.def.scale * 0.55 + 0.7;
-      if (b.position.distanceTo(playerPos.clone().add(new THREE.Vector3(0, 0.9, 0))) < hitRadius) {
-        const kDir = playerPos.clone().sub(b.position).setY(0.35).normalize();
+      if (b.position.distanceTo(playerCenter) < hitRadius) {
+        const kDir = this.tmpVec2.copy(playerPos).sub(b.position).setY(0.35).normalize();
         this.onPlayerHit?.(Math.round(b.def.damage * dmgMult), b.def.name, kDir);
       }
     }
@@ -757,7 +781,7 @@ export class EntityManager {
       }
 
       if (p.boomerangReturn && p.life < p.maxLife * 0.55) {
-        const back = playerPos.clone().add(new THREE.Vector3(0, 1.1, 0)).sub(p.position);
+        const back = this.tmpVec2.set(playerPos.x, playerPos.y + 1.1, playerPos.z).sub(p.position);
         if (back.length() < 1.2) {
           this.removeProjectile(i, particles);
           continue;
@@ -766,13 +790,13 @@ export class EntityManager {
       } else if (p.homing && p.fromPlayer) {
         const target = this.findNearestTarget(p.position, 22);
         if (target) {
-          const desired = target.pos.clone().sub(p.position).normalize().multiplyScalar(p.velocity.length());
+          const desired = this.tmpVec2.copy(target.pos).sub(p.position).normalize().multiplyScalar(p.velocity.length());
           p.velocity.lerp(desired, 7 * clampedDt);
         }
       }
 
       p.velocity.y -= p.gravity * clampedDt;
-      const nextPos = p.position.clone().addScaledVector(p.velocity, clampedDt);
+      const nextPos = this.tmpVec2.copy(p.position).addScaledVector(p.velocity, clampedDt);
 
       // Block bounce / collision
       if (!p.boomerangReturn && !p.kind.includes('zenith') && !p.kind.includes('prism') && isSolidBlock(world.getBlock(nextPos.x, nextPos.y, nextPos.z))) {
@@ -796,7 +820,8 @@ export class EntityManager {
       if (p.mesh) {
         p.mesh.position.copy(p.position);
         if (p.velocity.lengthSq() > 0.01) {
-          p.mesh.lookAt(p.position.clone().add(p.velocity));
+          this.tmpVec3.copy(p.position).add(p.velocity);
+          p.mesh.lookAt(this.tmpVec3);
         }
       }
 
@@ -805,9 +830,10 @@ export class EntityManager {
         let hitConsumed = false;
         for (const e of this.enemies) {
           if (p.hitIds.has(e.id)) continue;
-          if (e.position.clone().add(new THREE.Vector3(0, e.def.size[1] * 0.5, 0)).distanceTo(p.position) < e.def.size[0] * 0.65 + 0.5) {
+          this.tmpVec3.set(e.position.x, e.position.y + e.def.size[1] * 0.5, e.position.z);
+          if (this.tmpVec3.distanceTo(p.position) < e.def.size[0] * 0.65 + 0.5) {
             p.hitIds.add(e.id);
-            this.damageTarget(e, p.damage, p.velocity.clone().normalize(), p.knockback, Math.random() < 0.08, particles);
+            this.damageTarget(e, p.damage, this.tmpVec3.copy(p.velocity).normalize(), p.knockback, Math.random() < 0.08, particles);
             p.pierce--;
             if (p.pierce <= 0) { hitConsumed = true; break; }
           }
@@ -817,7 +843,7 @@ export class EntityManager {
             if (p.hitIds.has(b.id)) continue;
             if (b.position.distanceTo(p.position) < b.def.scale * 0.65 + 0.6) {
               p.hitIds.add(b.id);
-              this.damageTarget(b, p.damage, p.velocity.clone().normalize(), 0, Math.random() < 0.08, particles);
+              this.damageTarget(b, p.damage, this.tmpVec3.copy(p.velocity).normalize(), 0, Math.random() < 0.08, particles);
               p.pierce--;
               if (p.pierce <= 0) { hitConsumed = true; break; }
             }
@@ -828,8 +854,8 @@ export class EntityManager {
           continue;
         }
       } else {
-        if (p.position.distanceTo(playerPos.clone().add(new THREE.Vector3(0, 0.9, 0))) < 0.85) {
-          const kDir = p.velocity.clone().setY(0.2).normalize();
+        if (p.position.distanceTo(playerCenter) < 0.85) {
+          const kDir = this.tmpVec3.copy(p.velocity).setY(0.2).normalize();
           this.onPlayerHit?.(p.damage, p.kind, kDir);
           this.removeProjectile(i, particles);
         }

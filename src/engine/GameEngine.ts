@@ -121,7 +121,12 @@ export class GameEngine {
   private miningTargetKey = '';
   private miningProgress = 0;
   private targetHighlightMesh: THREE.LineSegments;
+  private miningOverlayMesh: THREE.Mesh;
+  private miningOverlayMat: THREE.MeshBasicMaterial;
   private hookLine: THREE.Line;
+  private currentFov: number;
+  private tmpVecA = new THREE.Vector3();
+  private tmpVecB = new THREE.Vector3();
 
   // Interactive State
   public openChest: ChestContents | null = null;
@@ -164,6 +169,7 @@ export class GameEngine {
     this.scene = new THREE.Scene();
     const w = container.clientWidth || window.innerWidth;
     const h = container.clientHeight || window.innerHeight;
+    this.currentFov = settings.fov;
     this.camera = new THREE.PerspectiveCamera(settings.fov, w / h, 0.15, 280);
 
     this.renderer = new THREE.WebGLRenderer({
@@ -171,9 +177,9 @@ export class GameEngine {
       powerPreference: 'high-performance',
     });
     this.renderer.setSize(w, h);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, settings.graphicsPreset === 'low' ? 1 : 1.75));
+    this.renderer.setPixelRatio(this.computePixelRatio(settings));
     this.renderer.shadowMap.enabled = settings.shadows;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.innerHTML = '';
     container.appendChild(this.renderer.domElement);
@@ -186,7 +192,8 @@ export class GameEngine {
     );
     this.world.initRenderer(this.scene, settings.ambientOcclusion, settings.shadows);
 
-    this.env = new EnvironmentSystem(this.scene, settings.shadows);
+    this.env = new EnvironmentSystem(this.scene, settings.shadows, settings.graphicsPreset === 'high');
+    this.env.setRenderDistance(settings.renderDistance);
     this.particles = new ParticleSystem(this.scene);
     this.particles.densityScale = settings.particleDensity;
     this.entities = new EntityManager();
@@ -208,7 +215,7 @@ export class GameEngine {
 
     this.cameraCtrl = new CameraController();
 
-    // Block target wireframe highlight
+    // Block target wireframe highlight + 3D mining progress overlay
     const boxEdges = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.01, 1.01, 1.01));
     this.targetHighlightMesh = new THREE.LineSegments(
       boxEdges,
@@ -216,6 +223,16 @@ export class GameEngine {
     );
     this.targetHighlightMesh.visible = false;
     this.scene.add(this.targetHighlightMesh);
+
+    this.miningOverlayMat = new THREE.MeshBasicMaterial({
+      color: '#111111',
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+    });
+    this.miningOverlayMesh = new THREE.Mesh(new THREE.BoxGeometry(1.015, 1.015, 1.015), this.miningOverlayMat);
+    this.miningOverlayMesh.visible = false;
+    this.scene.add(this.miningOverlayMesh);
 
     // Grappling hook tether line
     const lineGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
@@ -233,9 +250,18 @@ export class GameEngine {
     this.bindEvents();
     this.entities.syncTownNpcs(this.world, this.world.meta, this.char, this.player.position);
     this.notify(`Welcome to ${this.world.meta.name}!`, '#ffe082');
+    if (this.char.inventory.every((s) => !s)) {
+      this.notify('Empty hands! Chop trees & dig dirt, open Bag [E] to craft Wood tools!', '#69f0ae');
+    }
 
     this.lastFrameMs = performance.now();
     this.loop(this.lastFrameMs);
+  }
+
+  private computePixelRatio(settings: GameSettings): number {
+    const cap = settings.graphicsPreset === 'low' ? 1.0 : settings.graphicsPreset === 'medium' ? 1.4 : 1.75;
+    const scale = Math.max(0.5, Math.min(1.0, settings.resolutionScale ?? 1.0));
+    return Math.max(0.65, Math.min(window.devicePixelRatio || 1, cap) * scale);
   }
 
   private wireCallbacks(): void {
@@ -508,6 +534,10 @@ export class GameEngine {
     this.secondaryQueued = true;
   }
 
+  public triggerDash(): void {
+    this.dashQueued = true;
+  }
+
   public triggerGrapple(): void {
     this.grappleQueued = true;
   }
@@ -738,6 +768,22 @@ export class GameEngine {
       return;
     }
 
+    // Bare-handed / Tool Melee Combat when an enemy/boss is on the aim ray closer than target block!
+    const aimOrigin = this.tmpVecA.set(this.player.position.x, this.player.position.y + 1.35, this.player.position.z);
+    const aimFwd = this.tmpVecB.copy(this.cameraCtrl.aimDirection).normalize();
+    const maxEnemyReach = hit.hit ? Math.min(3.3, hit.distance + 0.45) : 3.3;
+    if (this.hasEnemyOnAimRay(aimOrigin, aimFwd, maxEnemyReach)) {
+      if (this.useCooldown <= 0) {
+        this.useCooldown = 0.3;
+        this.player.facingYaw = Math.atan2(aimFwd.x, aimFwd.z);
+        this.playerModel.triggerAction('swing', 0.26);
+        this.audio.playSfx('sword_swing');
+        const punchDmg = def && (def.pickPower || def.axePower || def.hammerPower) ? 7 : 5;
+        this.entities.performMeleeSweep(aimOrigin, aimFwd, 3.4, punchDmg, 3.4, 5, this.particles);
+      }
+      return;
+    }
+
     // Mining Blocks! (Works with Pickaxes, Axes, Hammers, or hand-mining soft blocks like dirt/wood/plants!)
     if (hit.hit) {
       const pickPower = def?.pickPower ?? (this.findBestToolPower('pick'));
@@ -790,6 +836,34 @@ export class GameEngine {
       if (kind === 'hammer' && d.hammerPower) best = Math.max(best, d.hammerPower);
     }
     return best;
+  }
+
+  private hasEnemyOnAimRay(origin: THREE.Vector3, fwd: THREE.Vector3, maxDist: number): boolean {
+    for (const e of this.entities.enemies) {
+      const dx = e.position.x - origin.x;
+      const dy = e.position.y + e.def.size[1] * 0.5 - origin.y;
+      const dz = e.position.z - origin.z;
+      const proj = dx * fwd.x + dy * fwd.y + dz * fwd.z;
+      if (proj < -0.2 || proj > maxDist) continue;
+      const px = dx - fwd.x * proj;
+      const py = dy - fwd.y * proj;
+      const pz = dz - fwd.z * proj;
+      const r = e.def.size[0] * 0.65 + 0.55;
+      if (px * px + py * py + pz * pz <= r * r) return true;
+    }
+    for (const b of this.entities.bosses) {
+      const dx = b.position.x - origin.x;
+      const dy = b.position.y - origin.y;
+      const dz = b.position.z - origin.z;
+      const proj = dx * fwd.x + dy * fwd.y + dz * fwd.z;
+      if (proj < -0.4 || proj > maxDist + 1.0) continue;
+      const px = dx - fwd.x * proj;
+      const py = dy - fwd.y * proj;
+      const pz = dz - fwd.z * proj;
+      const r = b.def.scale * 0.75 + 0.65;
+      if (px * px + py * py + pz * pz <= r * r) return true;
+    }
+    return false;
   }
 
   private handleSecondaryAction(stats: ComputedPlayerStats): void {
@@ -942,6 +1016,13 @@ export class GameEngine {
     if (this.disposed) return;
     this.rafId = requestAnimationFrame(this.loop);
 
+    // Optional battery-saver FPS cap (30/60); 120 or 0 runs unthrottled at native display refresh rate!
+    const targetFps = this.settings.targetFps ?? 120;
+    if (targetFps > 0 && targetFps < 100) {
+      const minIntervalMs = 1000 / targetFps - 1.5;
+      if (nowMs - this.lastFrameMs < minIntervalMs) return;
+    }
+
     const dt = Math.min(0.05, Math.max(0.001, (nowMs - this.lastFrameMs) / 1000));
     this.lastFrameMs = nowMs;
 
@@ -982,6 +1063,7 @@ export class GameEngine {
     this.world.tickSimulation(dt);
 
     // Player Physics & Input
+    let hSpeed = 0;
     if (!this.isDead) {
       const forward = (this.keys.has('KeyW') ? 1 : 0) - (this.keys.has('KeyS') ? 1 : 0) + this.touchMove.y;
       const strafe = (this.keys.has('KeyD') ? 1 : 0) - (this.keys.has('KeyA') ? 1 : 0) + this.touchMove.x;
@@ -1005,18 +1087,22 @@ export class GameEngine {
 
       this.player.update(dt, this.world, this.char, stats, input, this.settings.autoJump, this.journeyPowers.godmode);
 
-      // Update held dynamic radial light in shader!
+      // Update held dynamic radial light in shader (zero allocation!)
       const heldStack = this.char.inventory[this.selectedHotbar];
       const heldDef = heldStack ? getItemDef(heldStack.itemId) : undefined;
       const lightRadius = Math.max(stats.shineRadius, heldDef?.holdLight ?? 0, 4.5);
-      this.world.shaderUniforms.uHeldLightPos.value.copy(this.player.position).add(new THREE.Vector3(0, 1.3, 0));
+      this.world.shaderUniforms.uHeldLightPos.value.set(
+        this.player.position.x,
+        this.player.position.y + 1.3,
+        this.player.position.z
+      );
       this.world.shaderUniforms.uHeldLightRadius.value = lightRadius;
       this.world.shaderUniforms.uHeldLightColor.value.set(
         heldDef?.holdLight ? heldDef.iconColor : stats.shineRadius > 0 ? '#fff59d' : '#a8c0e0'
       );
 
       // Footsteps
-      const hSpeed = Math.hypot(this.player.velocity.x, this.player.velocity.z);
+      hSpeed = Math.hypot(this.player.velocity.x, this.player.velocity.z);
       if (this.player.grounded && hSpeed > 1.2) {
         this.footstepTimer -= dt * (hSpeed / 6);
         if (this.footstepTimer <= 0) {
@@ -1025,7 +1111,13 @@ export class GameEngine {
         }
       }
 
-      // Camera & Model animation
+      // Camera, Dynamic Sprint FOV & Model animation
+      const targetFov = this.settings.fov + (hSpeed > 8.5 ? Math.min(6, (hSpeed - 8.5) * 0.9) : 0);
+      if (Math.abs(targetFov - this.currentFov) > 0.05) {
+        this.currentFov = THREE.MathUtils.lerp(this.currentFov, targetFov, Math.min(1, dt * 8));
+        this.camera.fov = this.currentFov;
+        this.camera.updateProjectionMatrix();
+      }
       this.cameraCtrl.update(dt, this.camera, this.player.position, this.player.eyeHeight, this.world);
       this.playerModel.root.visible = !this.cameraCtrl.firstPerson;
       this.playerModel.root.position.copy(this.player.position);
@@ -1039,11 +1131,13 @@ export class GameEngine {
       else if (hSpeed > 0.5) animState = 'walk';
       this.playerModel.update(dt, animState, hSpeed, this.cameraCtrl.pitch);
 
-      // Grappling hook line
+      // Grappling hook line (in-place buffer update!)
       if (this.player.hookAnchor) {
         this.hookLine.visible = true;
-        const pts = [this.player.position.clone().add(new THREE.Vector3(0, 1.2, 0)), this.player.hookAnchor];
-        this.hookLine.geometry.setFromPoints(pts);
+        const posAttr = this.hookLine.geometry.getAttribute('position') as THREE.BufferAttribute;
+        posAttr.setXYZ(0, this.player.position.x, this.player.position.y + 1.2, this.player.position.z);
+        posAttr.setXYZ(1, this.player.hookAnchor.x, this.player.hookAnchor.y, this.player.hookAnchor.z);
+        posAttr.needsUpdate = true;
       } else {
         this.hookLine.visible = false;
       }
@@ -1062,6 +1156,10 @@ export class GameEngine {
     } else {
       this.cameraCtrl.update(dt, this.camera, this.player.position, this.player.eyeHeight, this.world);
     }
+
+    // Drive Shader Time & Camera Position for water ripples, wind leaves & Fresnel specular!
+    this.world.shaderUniforms.uTime.value = nowMs * 0.001;
+    this.world.shaderUniforms.uCameraPos.value.copy(this.camera.position);
 
     // Check altitude achievements
     const biomeId = this.world.getBiomeAt(this.player.position.x, this.player.position.y, this.player.position.z);
@@ -1099,13 +1197,23 @@ export class GameEngine {
     }
     this.audio.updateMusic(dt);
 
-    // Target Block Highlight
+    // Target Block Highlight + 3D Mining Crack Progress Overlay
     const aimHit = this.world.raycastBlock(this.cameraCtrl.aimOrigin, this.cameraCtrl.aimDirection, 6.5 + (this.journeyPowers.placementRangeBoost ? 5 : 0));
     if (aimHit.hit && !this.isDead) {
       this.targetHighlightMesh.visible = true;
       this.targetHighlightMesh.position.set(aimHit.bx + 0.5, aimHit.by + 0.5, aimHit.bz + 0.5);
+      if (this.miningProgress > 0.05) {
+        this.miningOverlayMesh.visible = true;
+        this.miningOverlayMesh.position.copy(this.targetHighlightMesh.position);
+        this.miningOverlayMat.opacity = Math.min(0.68, this.miningProgress * 0.65);
+        const pulse = 1.0 + Math.sin(this.miningProgress * Math.PI * 5) * 0.012;
+        this.miningOverlayMesh.scale.setScalar(pulse);
+      } else {
+        this.miningOverlayMesh.visible = false;
+      }
     } else {
       this.targetHighlightMesh.visible = false;
+      this.miningOverlayMesh.visible = false;
     }
 
     // Notifications decay
@@ -1137,11 +1245,11 @@ export class GameEngine {
     const w = this.container.clientWidth || window.innerWidth;
     const h = this.container.clientHeight || window.innerHeight;
     const projectedNums = this.particles.floatingNumbers.map((fn: FloatingNumber) => {
-      const v = new THREE.Vector3(fn.x, fn.y, fn.z).project(this.camera);
+      this.tmpVecA.set(fn.x, fn.y, fn.z).project(this.camera);
       return {
         text: fn.text,
-        x: (v.x * 0.5 + 0.5) * w,
-        y: (-v.y * 0.5 + 0.5) * h,
+        x: (this.tmpVecA.x * 0.5 + 0.5) * w,
+        y: (-this.tmpVecA.y * 0.5 + 0.5) * h,
         color: fn.color,
         crit: fn.crit,
         alpha: Math.min(1, fn.life / fn.maxLife),
@@ -1208,10 +1316,14 @@ export class GameEngine {
 
   public applySettings(settings: GameSettings): void {
     this.settings = settings;
+    this.currentFov = settings.fov;
     this.camera.fov = settings.fov;
     this.camera.updateProjectionMatrix();
+    this.renderer.setPixelRatio(this.computePixelRatio(settings));
     this.renderer.shadowMap.enabled = settings.shadows;
     this.env.sunLight.castShadow = settings.shadows;
+    this.env.setShadowQuality(settings.graphicsPreset === 'high');
+    this.env.setRenderDistance(settings.renderDistance);
     this.world.enableShadows = settings.shadows;
     this.world.enableAO = settings.ambientOcclusion;
     this.particles.densityScale = settings.particleDensity;
@@ -1330,6 +1442,8 @@ export class GameEngine {
     canvas.addEventListener('wheel', onWheel, { passive: true });
     canvas.addEventListener('contextmenu', onContext);
     window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    window.visualViewport?.addEventListener('resize', onResize);
 
     this.cleanupListeners = () => {
       window.removeEventListener('keydown', onKeyDown);
@@ -1340,6 +1454,8 @@ export class GameEngine {
       canvas.removeEventListener('wheel', onWheel);
       canvas.removeEventListener('contextmenu', onContext);
       window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize);
+      window.visualViewport?.removeEventListener('resize', onResize);
     };
   }
 

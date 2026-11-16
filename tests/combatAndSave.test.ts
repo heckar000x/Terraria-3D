@@ -3,7 +3,9 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { BOSSES } from '@/data/bosses';
 import { EntityManager } from '@/engine/EntityManager';
+import { EnvironmentSystem } from '@/engine/EnvironmentSystem';
 import { ParticleSystem } from '@/engine/ParticleSystem';
+import { PlayerModel } from '@/engine/PlayerModel';
 import { createDefaultCharacter, createNewWorldSave, SaveManager } from '@/systems/SaveManager';
 import { WorldManager } from '@/world/WorldManager';
 
@@ -147,5 +149,63 @@ describe('Combat, All 18 Bosses & Save/Load Persistence', () => {
     expect(loadedWorld!.meta.isHardmode).toBe(true);
     expect(loadedWorld!.chests['1,140,1'].items[0]?.itemId).toBe('pwnhammer');
     expect(loadedWorld!.playerPositionsByChar[char.id]).toEqual([14, 152, -8]);
+  });
+
+  it('migrates untouched v1 starter inventories to empty and runs EnvironmentSystem + PlayerModel cleanly', async () => {
+    const sm = new SaveManager();
+    const defaults = sm.loadSettings();
+    expect(defaults.targetFps).toBe(120);
+    expect(defaults.resolutionScale).toBe(1);
+    await sm.listCharacters(); // Initialize IndexedDB object stores first
+
+    // Untouched legacy v1 save written directly to IndexedDB without schemaVersion
+    const legacyFresh = createDefaultCharacter('OldFresh', 'classic', defaultAppearance);
+    delete (legacyFresh as Partial<typeof legacyFresh>).schemaVersion;
+    legacyFresh.playTimeSeconds = 12;
+    legacyFresh.inventory[0] = { itemId: 'copper_shortsword', count: 1 };
+    legacyFresh.inventory[1] = { itemId: 'copper_pickaxe', count: 1 };
+    legacyFresh.inventory[2] = { itemId: 'copper_axe', count: 1 };
+    legacyFresh.inventory[3] = { itemId: 'torch', count: 15 };
+
+    // Progressed legacy save (>120s playtime + iron armor) must keep its items!
+    const legacyVeteran = createDefaultCharacter('Veteran', 'classic', defaultAppearance);
+    delete (legacyVeteran as Partial<typeof legacyVeteran>).schemaVersion;
+    legacyVeteran.playTimeSeconds = 600;
+    legacyVeteran.inventory[0] = { itemId: 'copper_shortsword', count: 1 };
+    legacyVeteran.inventory[5] = { itemId: 'iron_broadsword', count: 1 };
+
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open('Terraria3D_SaveDB', 1);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('characters', 'readwrite');
+        tx.objectStore('characters').put(legacyFresh);
+        tx.objectStore('characters').put(legacyVeteran);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      };
+      req.onerror = () => reject(req.error);
+    });
+
+    const chars = await sm.listCharacters();
+    const migratedFresh = chars.find((c) => c.id === legacyFresh.id)!;
+    const keptVeteran = chars.find((c) => c.id === legacyVeteran.id)!;
+    expect(migratedFresh.inventory.every((s) => s === null)).toBe(true);
+    expect(keptVeteran.inventory[0]?.itemId).toBe('copper_shortsword');
+    expect(keptVeteran.inventory[5]?.itemId).toBe('iron_broadsword');
+
+    // EnvironmentSystem + PlayerModel update cycle
+    const scene = new THREE.Scene();
+    const worldSave = createNewWorldSave('SkyTest', 99999, 'small', 'classic', 'corruption');
+    const world = new WorldManager(worldSave.meta, worldSave.chunkDeltas, worldSave.chests, worldSave.exploredChunks);
+    const env = new EnvironmentSystem(scene, true, false);
+    env.setRenderDistance(4);
+    env.setShadowQuality(true);
+    env.update(0.016, scene, world, world.meta, new THREE.Vector3(0, 150, 0), 'forest', false, false);
+    expect(world.shaderUniforms.uSkyLightTint.value.r).toBeGreaterThan(0);
+
+    const model = new PlayerModel(defaultAppearance);
+    model.triggerAction('swing', 0.25);
+    model.update(0.016, 'run', 10, 0.1);
   });
 });

@@ -32,8 +32,14 @@ export const RECIPES: RecipeDef[] = [
   r('campfire', 1, [['wood', 10], ['torch', 5]], 'hand'),
   r('wood_platform', 2, [['wood', 1]], 'hand'),
   r('wooden_sword', 1, [['wood', 7]], 'workbench'),
+  r('wooden_pickaxe', 1, [['wood', 8]], 'workbench'),
+  r('wooden_axe', 1, [['wood', 6]], 'workbench'),
   r('wooden_bow', 1, [['wood', 10]], 'workbench'),
   r('wooden_hammer', 1, [['wood', 8]], 'workbench'),
+  r('stone_sword', 1, [['stone_block', 8], ['wood', 2]], 'workbench'),
+  r('stone_pickaxe', 1, [['stone_block', 8], ['wood', 4]], 'workbench'),
+  r('stone_axe', 1, [['stone_block', 6], ['wood', 3]], 'workbench'),
+  r('stone_hammer', 1, [['stone_block', 8], ['wood', 3]], 'workbench'),
   r('wooden_yoyo', 1, [['wood', 10], ['cobweb', 20]], 'workbench'),
   r('wooden_arrow', 25, [['wood', 1], ['stone_block', 1]], 'workbench'),
   r('flaming_arrow', 10, [['wooden_arrow', 10], ['torch', 1]], 'hand'),
@@ -107,6 +113,7 @@ export const RECIPES: RecipeDef[] = [
   r('mythril_anvil', 1, [['orichalcum_bar', 12]], 'iron_anvil', true),
 
   // Pre-Hardmode Tools & Weapons
+  r('copper_shortsword', 1, [['copper_bar', 6]], 'iron_anvil'),
   r('copper_pickaxe', 1, [['copper_bar', 12], ['wood', 4]], 'iron_anvil'),
   r('copper_axe', 1, [['copper_bar', 9], ['wood', 3]], 'iron_anvil'),
   r('copper_hammer', 1, [['copper_bar', 10], ['wood', 3]], 'iron_anvil'),
